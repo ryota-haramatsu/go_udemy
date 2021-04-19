@@ -8,7 +8,7 @@ go get -u github.com/derekparker/delve/cmd/dlv
 # package document
 fmt
 %v %T
-https://golang.org/pkg/fmt/
+https://golang.org/pkg/fmt/ 
 
 strings
 
@@ -33,3 +33,27 @@ strings
     - https://play.golang.org/p/3Tp_959mZCj 
 
 # map
+- pythonでいう辞書型 phpでいう php の連想配列に似ている
+- 初期化 
+    - m := make(map[string]int)
+    - var m2 map[string]int  nilになるのでappendしないと追加できない
+- v, ok := ["apple"] 
+- スライスもmapもvarで宣言するとnilが初期値になる
+
+# バイト
+- b := []byte{72, 73}
+- string(b) でキャスト
+
+# 関数
+- 引数の型が全て同じであれば最後に１つだけ書けば良い
+    - func add(x , y int) {}
+- 返り値が複数の時は 「,」 で引数とreturn
+    - func add(x, y int) int, int {return x + y, x - y}
+- 返り値に名前をつけることができる
+    -  func calc(price, item int) (result int) {
+        result = price * item
+        return result
+    }
+    - 返り値が明らかにわかるものに関しては変数名を付けなくても良い
+- 関数の中に関数を定義できる
+    - func(x int) {}() のように変数に入れずに()を記入することで即時実行
