@@ -57,3 +57,9 @@ strings
     - 返り値が明らかにわかるものに関しては変数名を付けなくても良い
 - 関数の中に関数を定義できる
     - func(x int) {}() のように変数に入れずに()を記入することで即時実行
+
+# クロージャー
+https://play.golang.org/p/fS3MG-QoBIr
+
+# 可変長引数
+https://play.golang.org/p/7Hc1Tli2cCT
