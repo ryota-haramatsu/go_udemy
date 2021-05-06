@@ -63,3 +63,5 @@ https://play.golang.org/p/fS3MG-QoBIr
 
 # 可変長引数
 https://play.golang.org/p/7Hc1Tli2cCT
+
+# 
