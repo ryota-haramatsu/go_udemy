@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
-	"gomodtest/mylib"
+
+	"github.com/markcheno/go-quote"
+	"github.com/markcheno/go-talib"
 )
 
 func main() {
-	s := []int{1, 2, 2, 45, 100}
-	mylib.Average(s)
-	fmt.Println(mylib.Average(s))
+	spy, _ := quote.NewQuoteFromYahoo("spy", "2016-01-01", "2016-04-01", quote.Daily, true)
+	fmt.Print(spy.CSV())
+	rsi2 := talib.Rsi(spy.Close, 2)
+	fmt.Println(rsi2)
 }

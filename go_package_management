@@ -1,0 +1,12 @@
+Go1.11以降はGoMODULE
+go env
+GO111MODULE=
+が空になっていることがあるので
+go env -w GO111MODULE=on
+を実行
+
+またインストールしたgoのパッケージは
+/.go とかに格納されている
+githubから取得したサードパーティパッケージもここにある
+
+https://qiita.com/Syoitu/items/f221b52231703cebe8ff
