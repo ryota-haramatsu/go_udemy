@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 const baseURL = "https://api.bitflyer.com/v1/"
@@ -28,13 +30,8 @@ func New(key, secret string) *APIClient {
 	return apiClient
 }
 
-/*
-headerのメソッド 認証
-map goの連想配列のこと
-*/
 func (api APIClient) header(method, endpoint string, body []byte) map[string]string {
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	// log.Println(timestamp)
 	message := timestamp + method + endpoint + string(body)
 
 	mac := hmac.New(sha256.New, []byte(api.secret))
@@ -48,44 +45,30 @@ func (api APIClient) header(method, endpoint string, body []byte) map[string]str
 	}
 }
 
-/*
-リクエストを送信するためのメソッド
-urlPath baseURLの後ろ部分
-GET  query
-POST data を使用する
-*/
 func (api *APIClient) doRequest(method, urlPath string, query map[string]string, data []byte) (body []byte, err error) {
-	// baseURLが正しいかチェック
 	baseURL, err := url.Parse(baseURL)
 	if err != nil {
-		log.Fatalln(err)
+		return
 	}
-	// urlPathが正しいかチェック
 	apiURL, err := url.Parse(urlPath)
 	if err != nil {
-		log.Fatalln(err)
+		return
 	}
-	// ResolveReference: 相対URL絶対URLに変更して文字列にキャスト
 	endpoint := baseURL.ResolveReference(apiURL).String()
 	log.Printf("action=doRequest endpoint=%s", endpoint)
-
-	// POSTの場合はbytes.NewBuffer(data)が使用される
 	req, err := http.NewRequest(method, endpoint, bytes.NewBuffer(data))
 	if err != nil {
-		log.Fatalln(err)
+		return
 	}
-	// リクエストにGETの時クエリがあれば追加
 	q := req.URL.Query()
 	for key, value := range query {
 		q.Add(key, value)
 	}
-	req.URL.RawQuery = q.Encode() // URLをRawQueryにするにはEncode必要
+	req.URL.RawQuery = q.Encode()
 
-	// ヘッダー情報があれば追加
 	for key, value := range api.header(method, req.URL.RequestURI(), data) {
 		req.Header.Add(key, value)
 	}
-	// レスポンス
 	resp, err := api.httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -99,18 +82,13 @@ func (api *APIClient) doRequest(method, urlPath string, query map[string]string,
 }
 
 type Balance struct {
-	CurrentCode string  `json:"currency_code`
-	Amount      float64 `json"amount"`
-	Available   float64 `json"available"`
+	CurrentCode string  `json:"currency_code"`
+	Amount      float64 `json:"amount"`
+	Available   float64 `json:"available"`
 }
 
-/*
-資産残高を取得するAPI
-GET /v1/me/getbalance
-*/
 func (api *APIClient) GetBalance() ([]Balance, error) {
 	url := "me/getbalance"
-	// レスポンスを取得
 	resp, err := api.doRequest("GET", url, map[string]string{}, nil)
 	log.Printf("url=%s resp=%s", url, string(resp))
 	if err != nil {
@@ -128,7 +106,6 @@ func (api *APIClient) GetBalance() ([]Balance, error) {
 
 type Ticker struct {
 	ProductCode     string  `json:"product_code"`
-	State           string  `json:"state"`
 	Timestamp       string  `json:"timestamp"`
 	TickID          int     `json:"tick_id"`
 	BestBid         float64 `json:"best_bid"`
@@ -137,21 +114,16 @@ type Ticker struct {
 	BestAskSize     float64 `json:"best_ask_size"`
 	TotalBidDepth   float64 `json:"total_bid_depth"`
 	TotalAskDepth   float64 `json:"total_ask_depth"`
-	MarketBidSize   float64 `json:"market_bid_size"`
-	MarketAskSize   float64 `json:"market_ask_size"`
 	Ltp             float64 `json:"ltp"`
 	Volume          float64 `json:"volume"`
 	VolumeByProduct float64 `json:"volume_by_product"`
 }
 
-// 売りと買いの中間を計算するメソッド
 func (t *Ticker) GetMidPrice() float64 {
 	return (t.BestBid + t.BestAsk) / 2
 }
 
-// DBが対応するRFC3339で日付を入れるために時間を変換するメソッド
 func (t *Ticker) DateTime() time.Time {
-	fmt.Println(t)
 	dateTime, err := time.Parse(time.RFC3339, t.Timestamp)
 	if err != nil {
 		log.Printf("action=DateTime, err=%s", err.Error())
@@ -159,25 +131,83 @@ func (t *Ticker) DateTime() time.Time {
 	return dateTime
 }
 
-// 指定したdurationの大きさ以下の時刻を切り捨てることができるメソッド
 func (t *Ticker) TruncateDateTime(duration time.Duration) time.Time {
 	return t.DateTime().Truncate(duration)
 }
 
 func (api *APIClient) GetTicker(productCode string) (*Ticker, error) {
 	url := "ticker"
-	// レスポンスを取得
 	resp, err := api.doRequest("GET", url, map[string]string{"product_code": productCode}, nil)
-	log.Printf("url=%s resp=%s", url, string(resp))
 	if err != nil {
-		log.Printf("action=GetTicker err=%s", err.Error())
 		return nil, err
 	}
 	var ticker Ticker
 	err = json.Unmarshal(resp, &ticker)
 	if err != nil {
-		log.Printf("action=GetTicker err=%s", err.Error())
 		return nil, err
 	}
 	return &ticker, nil
+}
+
+type JsonRPC2 struct {
+	Version string      `json:"jsonrpc"`
+	Method  string      `json:"method"`
+	Params  interface{} `json:"params"`
+	Result  interface{} `json:"result,omitempty"`
+	Id      *int        `json:"id,omitempty"`
+}
+
+type SubscribeParams struct {
+	Channel string `json:"channel"`
+}
+
+func (api *APIClient) GetRealTimeTicker(symbol string, ch chan<- Ticker) {
+
+	u := url.URL{
+		Scheme: "wss",                         // httpsのような文字列
+		Host:   "ws.lightstream.bitflyer.com", // ホスト
+		Path:   "/json-rpc",                   // 相対URL
+	}
+	log.Printf("connecting to %s", u.String())
+
+	// ここから
+	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		log.Fatal("dial:", err)
+	}
+	defer c.Close()
+
+	channel := fmt.Sprintf("lightning_ticker_%s", symbol)
+	if err := c.WriteJSON(&JsonRPC2{Version: "2.0", Method: "subscribe", Params: &SubscribeParams{channel}}); err != nil {
+		log.Fatal("subscribe:", err)
+		return
+	}
+
+OUTER:
+	for {
+		message := new(JsonRPC2)
+		if err := c.ReadJSON(message); err != nil {
+			log.Println("read:", err)
+			return
+		}
+
+		if message.Method == "channelMessage" {
+			switch v := message.Params.(type) {
+			case map[string]interface{}:
+				for key, binary := range v {
+					if key == "message" {
+						marshaTic, err := json.Marshal(binary)
+						if err != nil {
+							continue OUTER
+						}
+						var ticker Ticker
+						if err := json.Unmarshal(marshaTic, &ticker); err != nil {
+							continue OUTER
+						}
+						ch <- ticker
+					}
+				}
+			}
+		}
+	}
 }
